@@ -1,0 +1,34 @@
+.EXPORT_ALL_VARIABLES:
+
+KERNEL = kernel7
+ARCH = arm
+CROSS_COMPILE = arm-linux-gnueabihf-
+
+.PHONY: config
+
+crosscompile:
+	cd /tmp && icecc-create-env gcc
+	cd /tmp && icecc-create-env $(CROSS_COMPILE)gcc
+
+config:
+	$(MAKE) bcm2709_defconfig
+	sed -i "s/-v7l/-v7l-igalia/g" .config
+	echo "CONFIG_LOCALVERSION_AUTO=y" >> .config
+
+build:
+	$(MAKE) zImage modules dtbs
+
+install:
+	$(eval TMP := $(shell mktemp -d))
+	$(MAKE) INSTALL_MOD_PATH=$(TMP) modules_install
+	@ssh $(RPI4) mkdir -p /tmp/new_modules /tmp/new_kernel /tmp/new_kernel/overlays
+	@rsync -av $(TMP)/ $(RPI4):/tmp/new_modules/
+	@scp arch/$(ARCH)/boot/zImage $(RPI4):/tmp/new_kernel/$(KERNEL).img
+	@scp arch/$(ARCH)/boot/dts/*.dtb $(RPI4):/tmp/new_kernel
+	@scp arch/$(ARCH)/boot/dts/overlays/*.dtb* $(RPI4):/tmp/new_kernel/overlays
+	@scp arch/$(ARCH)/boot/dts/overlays/README $(RPI4):/tmp/new_kernel/overlays
+	@ssh $(RPI4) sudo rsync -av /tmp/new_modules/lib/modules/ /lib/modules/
+	@ssh $(RPI4) sudo rsync -av /tmp/new_kernel/ /boot/
+	@rm -rf $(TMP)
+
+all: config build install
